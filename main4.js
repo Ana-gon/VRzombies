@@ -559,20 +559,39 @@ function swingAxe() {
 }
 
 function detectAxeCollisions(hitZones) {
-  if (hitZones.length === 0) return;
+  if (!hitZones || hitZones.length === 0) return;
 
   const hitZombies = new Set();
 
   zombies.forEach((zombie) => {
     if (!zombie.isAlive) return;
 
-    const zombiePos = zombie.mesh.position;
+    // Obtener posición del "centro" del cuerpo del zombie (world)
+    const bodyWorldPos = new THREE.Vector3();
+    // Asumimos que el primer child es el cuerpo; si cambias orden, ajusta el índice
+    if (zombie.mesh.children && zombie.mesh.children.length > 0) {
+      zombie.mesh.children[0].getWorldPosition(bodyWorldPos);
+    } else {
+      // fallback: usar la posición del grupo (menos preciso)
+      zombie.mesh.getWorldPosition(bodyWorldPos);
+    }
+
     let isHit = false;
 
-    // Verificar colisión con múltiples puntos del swing
     for (const zone of hitZones) {
-      const dist = zone.pos.distanceTo(zombiePos);
-      if (dist < CONFIG.AXE_RANGE) {
+      // Distancia horizontal (X,Z) — ignoramos Y para evitar que la diferencia de altura falle el hit
+      const dx = zone.pos.x - bodyWorldPos.x;
+      const dz = zone.pos.z - bodyWorldPos.z;
+      const horizontalDist = Math.hypot(dx, dz);
+
+      // Comprobar diferencia vertical (Y) para evitar golpes demasiado separados en altura
+      const verticalDiff = Math.abs(zone.pos.y - bodyWorldPos.y);
+
+      // Ajusta estos umbrales si quieres ser más estricto
+      const horizontalOk = horizontalDist < CONFIG.AXE_RANGE;
+      const verticalOk = verticalDiff < 1.2; // tolerancia vertical (metros)
+
+      if (horizontalOk && verticalOk) {
         isHit = true;
         break;
       }
@@ -586,17 +605,26 @@ function detectAxeCollisions(hitZones) {
       // Efecto visual mejorado
       const originalScale = zombie.mesh.scale.clone();
       zombie.mesh.scale.multiplyScalar(0.9);
-      const originalColor = zombie.mesh.children[0].material.color.getHex();
-      zombie.mesh.children[0].material.color.setHex(0xff4444);
+      if (zombie.mesh.children && zombie.mesh.children[0]) {
+        const originalColor = zombie.mesh.children[0].material.color.getHex();
+        zombie.mesh.children[0].material.color.setHex(0xff4444);
 
-      setTimeout(() => {
-        if (zombie.mesh && zombie.isAlive) {
-          zombie.mesh.scale.copy(originalScale);
-          if (zombie.mesh.children[0]) {
-            zombie.mesh.children[0].material.color.setHex(originalColor);
+        setTimeout(() => {
+          if (zombie.mesh && zombie.isAlive) {
+            zombie.mesh.scale.copy(originalScale);
+            if (zombie.mesh.children[0]) {
+              zombie.mesh.children[0].material.color.setHex(originalColor);
+            }
           }
-        }
-      }, 150);
+        }, 150);
+      } else {
+        // restore scale si no hay child
+        setTimeout(() => {
+          if (zombie.mesh && zombie.isAlive) {
+            zombie.mesh.scale.copy(originalScale);
+          }
+        }, 150);
+      }
 
       if (zombie.health <= 0) {
         killZombie(zombie);
@@ -604,6 +632,7 @@ function detectAxeCollisions(hitZones) {
     }
   });
 }
+
 /**  ZOMBIES MEJORADOS  */
 const zombies = [];
 
